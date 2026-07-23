@@ -1,0 +1,44 @@
+{
+  "level_00_baseline": {
+    "rms_contrast": 64.32607294718424,
+    "gradient_mag": 68.2083174387614,
+    "laplacian_var": 3885.596671549479,
+    "n": 30
+  },
+  "level_01_I_x1.00": {
+    "rms_contrast": 40.80500837961833,
+    "gradient_mag": 47.98884906768799,
+    "laplacian_var": 1931.268204752604,
+    "n": 30
+  },
+  "level_02_II_x1.00": {
+    "rms_contrast": 33.67034397125244,
+    "gradient_mag": 40.84549694061279,
+    "laplacian_var": 1416.623114013672,
+    "n": 30
+  },
+  "level_03_III_x1.00": {
+    "rms_contrast": 27.3421937306722,
+    "gradient_mag": 33.98135903676351,
+    "laplacian_var": 1012.137641398112,
+    "n": 30
+  },
+  "level_04_1C_x1.00": {
+    "rms_contrast": 14.37293078104655,
+    "gradient_mag": 18.250303999582925,
+    "laplacian_var": 344.86875305175784,
+    "n": 30
+  },
+  "level_05_3C_x1.00": {
+    "rms_contrast": 8.248431126276651,
+    "gradient_mag": 9.9280499458313,
+    "laplacian_var": 129.08856976826985,
+    "n": 30
+  },
+  "level_06_5C_x1.00": {
+    "rms_contrast": 4.343417302767436,
+    "gradient_mag": 4.365554638703665,
+    "laplacian_var": 41.34013319015503,
+    "n": 30
+  }
+}

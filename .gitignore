@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Large intermediate outputs — regenerable from source
+data/*.JPG
+data/*.jpg
+depth/*.npy
+sweep/
+sweep_corrected/
+sweep_fine/
+results/level_*/
+results/*_log.txt
+
+# Keep the aggregated results (small) and figures
+!results/*.json
+!figures/
+

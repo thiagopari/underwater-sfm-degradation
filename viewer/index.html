@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Underwater SfM Degradation — Interactive Viewer</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --panel2: #273548;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --accent-warm: #f59e0b;
+        --border: #334155;
+        --good: #4ade80;
+        --bad: #f87171;
+    }
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.5;
+        min-height: 100vh;
+        padding: 2rem 1.5rem;
+    }
+    header {
+        max-width: 1200px;
+        margin: 0 auto 1.5rem auto;
+    }
+    header h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+    header p { color: var(--muted); font-size: 0.95rem; }
+    header a { color: var(--accent); text-decoration: none; }
+    header a:hover { text-decoration: underline; }
+
+    .layout {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 1.5rem;
+    }
+    @media (max-width: 900px) {
+        .layout { grid-template-columns: 1fr; }
+    }
+
+    .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.25rem;
+    }
+    .card h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .image-viewer {
+        background: #000;
+        border-radius: 6px;
+        overflow: hidden;
+        aspect-ratio: 4 / 3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+    .image-viewer img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+    .image-viewer .side-by-side {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+    }
+    .image-viewer .side-by-side > div {
+        overflow: hidden;
+        position: relative;
+    }
+    .image-viewer .side-by-side img {
+        width: 100%; height: 100%; object-fit: cover;
+    }
+    .side-by-side .label {
+        position: absolute;
+        top: 8px; left: 8px;
+        background: rgba(0,0,0,0.6);
+        color: white;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .controls {
+        margin-top: 1rem;
+    }
+    .control-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+    .control-row label {
+        min-width: 110px;
+        font-size: 0.9rem;
+        color: var(--muted);
+    }
+    input[type=range] {
+        flex: 1;
+        accent-color: var(--accent);
+    }
+    select {
+        background: var(--panel2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.4rem 0.6rem;
+        font: inherit;
+        flex: 1;
+    }
+    .level-badge {
+        display: inline-block;
+        background: var(--panel2);
+        color: var(--accent);
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85rem;
+        min-width: 70px;
+        text-align: center;
+    }
+    .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .toggle input { accent-color: var(--accent); }
+
+    .metrics-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.5rem;
+    }
+    .metrics-table td {
+        padding: 0.5rem 0;
+        font-size: 0.9rem;
+        border-bottom: 1px solid var(--border);
+    }
+    .metrics-table td:first-child { color: var(--muted); }
+    .metrics-table td:last-child {
+        text-align: right;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--text);
+    }
+    .metric-highlight {
+        color: var(--accent) !important;
+        font-weight: 600;
+    }
+
+    .status-strip {
+        margin-top: 0.75rem;
+        padding: 0.75rem;
+        background: var(--panel2);
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: var(--muted);
+        min-height: 3.5rem;
+    }
+    .status-strip strong { color: var(--text); }
+    .status-strip .fail { color: var(--bad); }
+    .status-strip .ok { color: var(--good); }
+
+    #minichart {
+        width: 100%;
+        height: 100px;
+        margin-top: 1rem;
+        background: var(--panel2);
+        border-radius: 4px;
+    }
+
+    footer {
+        max-width: 1200px;
+        margin: 2rem auto 0 auto;
+        color: var(--muted);
+        font-size: 0.85rem;
+        text-align: center;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+    <h1>Underwater SfM Degradation — Interactive Viewer</h1>
+    <p>Move the slider to see how wavelength-dependent Jerlov underwater optics degrade a clear-air image, and what happens to the corresponding COLMAP structure-from-motion reconstruction. Full write-up in <a href="../README.md">README.md</a>.</p>
+</header>
+
+<div class="layout">
+    <div class="card">
+        <h2>Image at current turbidity level</h2>
+        <div class="image-viewer" id="viewer">
+            <img id="preview" alt="preview" />
+        </div>
+        <div class="controls">
+            <div class="control-row">
+                <label>Frame</label>
+                <select id="frame-select"></select>
+            </div>
+            <div class="control-row">
+                <label>Water condition</label>
+                <input type="range" id="level-slider" min="0" max="6" value="0" step="1" />
+                <span class="level-badge" id="level-badge">baseline</span>
+            </div>
+            <div class="control-row">
+                <label class="toggle">
+                    <input type="checkbox" id="compare-toggle" />
+                    Compare vs baseline
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Reconstruction metrics</h2>
+        <table class="metrics-table" id="metrics-table">
+            <tr><td>Level</td><td id="m-tag">—</td></tr>
+            <tr><td>Water type</td><td id="m-desc">—</td></tr>
+            <tr><td>Registered</td><td id="m-reg">—</td></tr>
+            <tr><td>3D points</td><td id="m-pts">—</td></tr>
+            <tr><td>Mean features / image</td><td id="m-feat">—</td></tr>
+            <tr><td>Mean reproj. error</td><td id="m-reproj">—</td></tr>
+        </table>
+        <div class="status-strip" id="status">Loading data…</div>
+        <canvas id="minichart"></canvas>
+    </div>
+</div>
+
+<footer>
+    <p>Depth: DPT-SwinV2 · Degradation: Sea-thru-style Jerlov model · SfM: COLMAP · <a href="https://github.com/thiagopari/underwater-sfm-degradation">source</a></p>
+</footer>
+
+<script>
+const IMAGE_BASE = "assets/frames";
+let LEVELS = [];
+let FRAMES = [];
+let METRICS = {};
+const TYPE_DESCS = {
+    "baseline":  "clear air (reference)",
+    "I":  "Jerlov I — clearest open ocean",
+    "II": "Jerlov II — clear coastal water",
+    "III":"Jerlov III — turbid coastal water",
+    "1C": "Jerlov 1C — harbor (moderately turbid)",
+    "3C": "Jerlov 3C — harbor (very turbid)",
+    "5C": "Jerlov 5C — harbor (extremely turbid)"
+};
+
+async function boot() {
+    const manifest = await fetch("assets/manifest.json").then(r => r.json());
+    LEVELS = manifest.levels;
+    FRAMES = manifest.frames;
+    METRICS = manifest.metrics;
+
+    const slider = document.getElementById("level-slider");
+    slider.max = LEVELS.length - 1;
+
+    const select = document.getElementById("frame-select");
+    for (const f of FRAMES) {
+        const opt = document.createElement("option");
+        opt.value = f;
+        opt.textContent = f;
+        select.appendChild(opt);
+    }
+    select.value = FRAMES[0];
+
+    slider.addEventListener("input", update);
+    select.addEventListener("change", update);
+    document.getElementById("compare-toggle").addEventListener("change", update);
+    update();
+}
+
+function update() {
+    const idx = parseInt(document.getElementById("level-slider").value);
+    const frame = document.getElementById("frame-select").value;
+    const level = LEVELS[idx];
+    const baseline = LEVELS[0];
+    const compare = document.getElementById("compare-toggle").checked;
+
+    const viewer = document.getElementById("viewer");
+    if (compare && idx !== 0) {
+        viewer.innerHTML = `
+            <div class="side-by-side">
+                <div><span class="label">baseline</span><img src="${IMAGE_BASE}/${baseline.tag}/${frame}"></div>
+                <div><span class="label">${level.short}</span><img src="${IMAGE_BASE}/${level.tag}/${frame}"></div>
+            </div>`;
+    } else {
+        viewer.innerHTML = `<img id="preview" src="${IMAGE_BASE}/${level.tag}/${frame}">`;
+    }
+    document.getElementById("level-badge").textContent = level.short;
+
+    document.getElementById("m-tag").textContent = level.short;
+    document.getElementById("m-desc").textContent = TYPE_DESCS[level.short] || level.short;
+
+    const m = METRICS[level.tag] || {};
+    const nReg = m.num_registered || 0;
+    const nIn = m.num_input_images || 30;
+    const nPts = m.num_3d_points || 0;
+    const feats = m.features_per_image || [];
+    const meanFeats = feats.length ? Math.round(feats.reduce((a, b) => a + b, 0) / feats.length) : 0;
+    const reproj = m.mean_reproj_error != null ? m.mean_reproj_error.toFixed(3) : "—";
+
+    document.getElementById("m-reg").innerHTML = `${nReg} / ${nIn} <span class="metric-highlight">(${(nReg / Math.max(nIn,1) * 100).toFixed(0)}%)</span>`;
+    document.getElementById("m-pts").textContent = nPts.toLocaleString();
+    document.getElementById("m-feat").textContent = meanFeats.toLocaleString();
+    document.getElementById("m-reproj").textContent = reproj;
+
+    const status = document.getElementById("status");
+    if (nReg === nIn && nIn > 0) {
+        status.innerHTML = `<span class="ok">All ${nIn} frames registered.</span> Reconstruction quality: <strong>${nPts.toLocaleString()}</strong> 3D points.`;
+    } else if (nReg >= 0.75 * nIn) {
+        status.innerHTML = `<strong>${nIn - nReg}</strong> of ${nIn} frames failed to register. Reconstruction usable but degraded.`;
+    } else if (nReg > 2) {
+        status.innerHTML = `<span class="fail">Partial reconstruction only:</span> ${nReg} of ${nIn} frames registered.`;
+    } else if (nIn > 0) {
+        status.innerHTML = `<span class="fail">Reconstruction collapsed.</span> Feature matching insufficient for SfM at this turbidity.`;
+    } else {
+        status.innerHTML = `<em>No metrics available for this level.</em>`;
+    }
+
+    drawChart(idx);
+}
+
+function drawChart(activeIdx) {
+    const cv = document.getElementById("minichart");
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+
+    // build bars of registration rate
+    const rates = LEVELS.map(l => {
+        const m = METRICS[l.tag] || {};
+        const n = Math.max(m.num_input_images || 1, 1);
+        return 100 * (m.num_registered || 0) / n;
+    });
+    const barW = (w - 40) / LEVELS.length * 0.7;
+    const gap = (w - 40) / LEVELS.length * 0.3;
+    const maxH = h - 24;
+    for (let i = 0; i < LEVELS.length; i++) {
+        const x = 20 + i * (barW + gap);
+        const bh = (rates[i] / 100) * maxH;
+        ctx.fillStyle = (i === activeIdx) ? "#38bdf8" : "#334155";
+        ctx.fillRect(x, h - 20 - bh, barW, bh);
+
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "9px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(LEVELS[i].short, x + barW/2, h - 6);
+    }
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "9px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText("Registration rate across sweep (%)", 20, 12);
+}
+
+boot().catch(err => {
+    document.getElementById("status").innerHTML = `<span class="fail">Failed to load manifest: ${err.message}</span>`;
+});
+</script>
+</body>
+</html>
