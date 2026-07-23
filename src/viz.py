@@ -99,6 +99,46 @@ def depth_visualization(depth: np.ndarray, out_path: Path) -> Path:
     return out_path
 
 
+def fine_sweep_plot(fine_metrics: dict, out_path: Path) -> Path:
+    """Plot fine-grained sweep of intensity within a single Jerlov type."""
+    plt.rcParams.update(PLT_STYLE)
+    tags = sorted(fine_metrics.keys())
+    # extract intensities from tags like "fine_3C_x1.25"
+    intensities = []
+    for t in tags:
+        try:
+            intensities.append(float(t.rsplit("x", 1)[1]))
+        except Exception:
+            intensities.append(0.0)
+
+    def _get(k):
+        return [fine_metrics[t].get(k, 0) for t in tags]
+
+    reg = _get("num_registered")
+    pts = _get("num_3d_points")
+    reproj = _get("mean_reproj_error")
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.6))
+    color = "#2563eb"
+    for ax, y, ylabel, title in [
+        (axes[0], reg,    "Images registered",        "Registration vs intensity"),
+        (axes[1], pts,    "3D points",                "Reconstruction density vs intensity"),
+        (axes[2], reproj, "Mean reproj err (px)",     "Reprojection error vs intensity"),
+    ]:
+        ax.plot(intensities, y, "-o", color=color, linewidth=2, markersize=7)
+        ax.set_xlabel("Kd intensity multiplier")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title, fontsize=10)
+
+    fig.suptitle("Fine-grained sweep — Jerlov 3C, varying Kd intensity", fontsize=11, y=1.02)
+    fig.tight_layout()
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, bbox_inches="tight", dpi=140)
+    plt.close(fig)
+    return out_path
+
+
 def ablation_visual(
     sweep_dir: Path,
     corrected_root: Path,

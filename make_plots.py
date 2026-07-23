@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.viz import metrics_plots, image_quality_plot, PLT_STYLE
+from src.viz import metrics_plots, image_quality_plot, fine_sweep_plot, PLT_STYLE
 
 
 def _short(tag: str) -> str:
@@ -106,6 +106,12 @@ def main():
     if corr_path.exists():
         corr = json.loads(corr_path.read_text())
         p = combined_ablation_plot(sweep_metrics, corr, figures / "ablation_correction.png")
+        print(f"wrote {p}")
+
+    fine_path = results / "fine_metrics.json"
+    if fine_path.exists():
+        fine = json.loads(fine_path.read_text())
+        p = fine_sweep_plot(fine, figures / "fine_sweep.png")
         print(f"wrote {p}")
 
 

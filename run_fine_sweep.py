@@ -28,9 +28,9 @@ SWEEP = Path("sweep_fine")
 RESULTS = Path("results")
 
 # Coarse sweep showed SIFT is robust even at Jerlov 1C. Zoom in near the
-# actual break at 3C-5C by pushing intensity beyond the standard Kd values.
+# actual break at 3C -> 5C by pushing intensity beyond the standard Kd values.
 JERLOV_TYPE = "3C"
-INTENSITIES = [1.0, 1.5, 2.0, 2.5, 3.0]
+INTENSITIES = [1.25, 1.5, 1.75]
 
 
 def _degrade_dir(intensity: float) -> Path:

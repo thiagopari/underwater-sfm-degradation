@@ -86,22 +86,54 @@ makes the picture blurrier."
 
 ## Color-correction ablation
 
-An obvious counter-argument: "the RGB SfM only fails because the image is
-blue and SIFT is unhappy — just white-balance the image and it works."
+Two natural counter-arguments to the finding above:
 
-I test this. For each degraded level, I apply Shades-of-Gray white balance
-(a robust, well-known baseline that works better than Gray World on most
-underwater scenes), then re-run COLMAP. The correction fixes the color cast
-but not the loss of contrast or feature-scale information — SfM does not
-recover.
+1. "SfM fails because the image is blue — just white-balance it and it works."
+2. "SfM fails because we don't have Sea-thru — apply Sea-thru with the true
+   depth and Kd and it works."
 
-This has a clean physical interpretation: white balance is a channel-wise
-gain. It can undo the *color* effect of `exp(-Kd_c · z)` (average per
-channel), but it cannot undo the *spatial* effect (contrast loss because
-close and far pixels attenuate differently). Sea-thru works precisely
-because it uses per-pixel depth to invert the spatial effect too — which
-is why any pipeline that wants real color underwater needs per-pixel
-depth, not just an image.
+I test both, with the strongest possible version of each: Shades-of-Gray
+(a robust classical white balance) and Sea-thru with **oracle** depth and
+oracle Kd (i.e., the exact parameters used to synthesize the degradation).
+
+Results at the failure-region levels:
+
+| Level | uncorrected | +Shades-of-Gray | +Sea-thru (oracle) |
+|-------|-------------|-----------------|--------------------|
+| 3C | 30/30, 8065 pts | 30/30, **3994 pts** ↓50% | 30/30, 7000 pts ↓13% |
+| 5C | 24/30, 961 pts | **4/30, 115 pts** collapse | **29/30, 1813 pts** ↑90% |
+
+Two things jump out:
+
+**Naive white balance actively hurts, and it hurts worse the more turbid
+the water.** At 3C it halves the point count. At 5C it drops the
+registration rate from 24/30 to 4/30. Physically: per-channel gain
+amplifies noise in the low-signal (red) channel more than it amplifies
+signal, and SIFT descriptors — which are gradient-based and locally
+normalized — become less discriminative. The matcher rejects more
+pairs. The reconstruction thins out.
+
+**Depth-aware physics-based Sea-thru genuinely recovers 5C.** From 24
+frames registered → 29, and from 961 points → 1813 (almost a 2× recovery
+in reconstruction density). This is the strongest positive result in
+the study: at the point where the uncorrected pipeline is nearly
+useless, oracle Sea-thru brings it back to something usable — because
+inverting the *spatial* attenuation term with per-pixel depth is
+fundamentally different from just rescaling the global color.
+
+The industry lesson is precise: **turbid-water RGB reconstruction needs
+depth-aware color correction, not just white balance.** Stereo gives you
+that depth for free, which is why stereo-RGB underwater rigs (Voyis,
+Deep Trekker) can meaningfully target turbid coastal work. Sonar+RGB
+architectures cannot — the sonar depth is at the wrong resolution and
+not per-pixel-aligned to the camera — which is why IQUA-style
+sonar-primary systems don't try Sea-thru at all; they use sonar for
+geometry and RGB opportunistically.
+
+*Caveat: real Sea-thru estimates Kd from the image itself via
+dark-channel priors. That estimation step adds error the oracle
+version here doesn't have. The oracle result is an **upper bound** on
+what a real-world Sea-thru pipeline could deliver.*
 
 ## The surprise
 
