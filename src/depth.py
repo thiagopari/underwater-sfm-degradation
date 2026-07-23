@@ -102,6 +102,11 @@ def batch_estimate_depth(
 if __name__ == "__main__":
     import sys
     import time
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("Usage: python -m src.depth [DATA_DIR] [CACHE_DIR]")
+        print("  DATA_DIR:  directory containing .JPG/.jpg images (default: data)")
+        print("  CACHE_DIR: directory to write cached .npy depth maps (default: depth)")
+        sys.exit(0)
     data_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "data")
     cache_dir = Path(sys.argv[2] if len(sys.argv) > 2 else "depth")
     images = sorted(data_dir.glob("*.JPG")) + sorted(data_dir.glob("*.jpg"))
