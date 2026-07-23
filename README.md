@@ -11,19 +11,28 @@ The study answers a practical question for anyone considering RGB-based 3D
 reconstruction underwater: **at what point does turbidity flip stereo/RGB SfM
 from "reduced quality" to "unusable"?**
 
-> **TL;DR — Headline finding**
+> **TL;DR — Headline findings**
 >
-> RGB structure-from-motion stays fully usable much further into the turbidity
-> sweep than the image degradation would suggest. Across seven Jerlov water types
-> from clearest open ocean to extremely turbid harbor:
+> **On the coarse sweep:** RGB structure-from-motion stays fully usable much
+> further into the turbidity sweep than the image degradation would suggest.
+> Across seven Jerlov water types from clearest open ocean to extremely turbid harbor:
 >
 > - **Jerlov I – Jerlov 1C**: 100% frame registration, baseline reconstruction density.
 > - **Jerlov 3C** (very turbid harbor): 100% registration, but reconstruction density drops 34%.
 > - **Jerlov 5C** (extremely turbid harbor): pipeline collapses. 24/30 registered, reconstruction density drops 92%.
 >
-> The break is a cliff, not a slope. The takeaway is a wider "still usable" band
-> than sonar-vendor marketing implies, and a specific band where depth-aware color
-> correction (Sea-thru-style) is worth the engineering effort.
+> **On the color-correction ablation** (at the failure region):
+>
+> - **Naive white balance (Shades-of-Gray) actively hurts:** at 5C it drops
+>   registration from 24/30 → 4/30 and points from 961 → 115.
+> - **Physics-based Sea-thru with oracle depth rescues 5C:** back to 29/30
+>   registered and 1,813 points (a 90% increase in reconstruction density
+>   vs uncorrected).
+>
+> The break is a cliff, not a slope. The takeaway is a wider "still usable"
+> band than sonar-vendor marketing implies, and a hard requirement for
+> depth-aware color correction if you want to reconstruct in the turbid
+> band — white balance alone makes things worse.
 
 ![Hero: depth + turbidity sweep](figures/hero.png)
 
