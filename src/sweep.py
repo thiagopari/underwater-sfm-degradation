@@ -1,4 +1,4 @@
-"""Batch-degrade the dataset across a turbidity sweep."""
+"""[v1] Batch-degrade the dataset across a turbidity sweep."""
 
 from __future__ import annotations
 

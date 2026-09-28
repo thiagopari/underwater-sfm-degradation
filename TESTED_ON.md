@@ -1,42 +1,31 @@
-# Tested-on environment
+# Tested-on environment (study v2)
 
-The full pipeline (30 south-building images, 7 turbidity levels + 4 ablation
-runs, all metrics + plots + viewer packaging) was validated end-to-end on
-the following environment. Full runtime approximately 25 minutes wall-clock.
+- **Hardware:** MacBook Air, Apple Silicon (M4), 16 GB unified memory
+- **OS:** macOS (Darwin 25.x, arm64)
+- **COLMAP:** 4.0.4, CPU-only build (`brew install colmap`, no CUDA)
+- **Python packages:** exactly as pinned in `requirements.txt`
 
-- **Hardware:** MacBook Air, Apple Silicon (M-series), 16 GB unified memory.
-- **OS:** macOS (Darwin 25.5.0 arm64).
-- **Python:** 3.10.6 (via pyenv).
-- **COLMAP:** 4.0.4, CPU-only build (`brew install colmap`, no CUDA).
-- **PyTorch:** 2.13.0 with MPS enabled for DPT depth inference.
-- **HuggingFace transformers:** 5.14.1.
-- **OpenCV:** 5.0.0 (headless).
-- **matplotlib:** 3.10.9.
-- **numpy:** 2.2.6.
+## Runtime (one COLMAP process at a time, 6 threads)
 
-### Per-phase runtime observed on the tested hardware
+| Stage | Runs | Wall clock |
+|---|---|---|
+| Reference + 2 clear-air replicates | 3 | ~8 min |
+| Main sweep (6 water types x 3 seeds, SIFT) | 18 | ~42 min |
+| Standoff (1C, 3C at 1.5 m and 6 m, 2 seeds) | 8 | ~18 min |
+| Transition (3C at 3.5/4 m, 1C at 4.5/5 m, 2 seeds) | 8 | ~17 min |
+| ALIKED + LightGlue (7 conditions, 1 seed) | 7 | ~90 min |
+| Colour-correction ablation (3C, 5C x 3 methods x 2 seeds) | 12 | ~25 min |
+| **Total** | **56** | **~3.5 h** |
 
-| Phase | Runtime |
-|-------|---------|
-| Environment install | ~2 min |
-| Depth estimation (30 images, DPT-SwinV2 on MPS) | ~40 s |
-| Turbidity sweep image generation (7 levels × 30 images) | ~1 min |
-| COLMAP sweep (7 runs, CPU-only, `max_image_size=1600`) | ~14 min |
-| Image-quality metrics | <5 s |
-| Color-correction ablation (4 COLMAP runs) | ~10 min |
-| Plot generation | ~10 s |
-| Viewer packaging | ~10 s |
-| **Total end-to-end** | **~28 min** |
+A SIFT run takes 2-2.5 min and peaks at about 2.4 GB of memory; an ALIKED +
+LightGlue run takes about 13 min on CPU. `run_study.py` waits whenever free
+memory drops below 25% and skips runs that are already recorded, so an
+interrupted stage can be restarted. On macOS, run long stages under
+`caffeinate -i` so the machine does not sleep mid-run.
 
-### Notes for other systems
+## Other systems
 
-- **Linux with a CUDA GPU:** substantially faster. COLMAP with GPU-SIFT
-  matching typically 5–10× faster on the same dataset. Remove the
-  `--FeatureExtraction.use_gpu 0` and `--FeatureMatching.use_gpu 0`
-  overrides in `src/colmap_runner.py` (or pass `use_gpu=True` if I add
-  the option).
-- **Intel Mac / no MPS:** DPT depth inference will fall back to CPU
-  (~5× slower for depth, but depth is <1 min total either way — not
-  a bottleneck).
-- **Older Python:** the code uses `from __future__ import annotations`
-  plus type hints; tested on 3.10. Should run on 3.9+ but not verified.
+- **Linux + CUDA:** set `use_gpu` to 1 in `src/colmap_runner.py` for a large
+  speed-up (SIFT GPU matching, ALIKED/LightGlue on GPU).
+- **No MPS / CUDA:** only the one-off DPT depth step uses PyTorch; the cached
+  maps in `depth/` are enough for the rest of the study.

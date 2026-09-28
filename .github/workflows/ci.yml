@@ -15,18 +15,35 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-ci.txt') }}
 
-      - name: Install lightweight deps (no torch — CI only exercises pure-Python modules)
+      - name: Install pinned lightweight deps (no torch/COLMAP)
         run: |
           python -m pip install --upgrade pip
-          pip install numpy pytest opencv-python-headless matplotlib
+          pip install -r requirements-ci.txt
 
-      - name: Run Jerlov unit tests
-        run: pytest tests/ -v
+      - name: Unit tests
+        run: pytest -v
+
+      - name: Smoke test - render every water type and correct it
+        run: |
+          python - <<'EOF'
+          import numpy as np
+          from src.optics import WATER_TYPES, Water, Sensor, degrade_image
+          from src.color_correction import sea_thru_estimated, sea_thru_oracle
+          rng = np.random.default_rng(0)
+          img = (rng.uniform(0, 1, (120, 160, 3)) * 255).astype(np.uint8)
+          r = np.linspace(1.0, 8.0, 120 * 160, dtype=np.float32).reshape(120, 160)
+          for t in WATER_TYPES:
+              out, g = degrade_image(img, r, Water(t), Sensor(), 130.0, rng)
+              est, _ = sea_thru_estimated(out, r)
+              orc = sea_thru_oracle(out, r, Water(t), g)
+              assert out.shape == est.shape == orc.shape == img.shape
+              print(t, "gain", round(g, 1), "ok")
+          EOF

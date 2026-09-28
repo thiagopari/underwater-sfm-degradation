@@ -114,3 +114,83 @@ def correct(rgb: np.ndarray, method: str = "gray_world", **kw) -> np.ndarray:
     if method == "none":
         return rgb
     raise ValueError(f"Unknown method: {method}")
+
+
+# --------------------------------------------------------------------------
+# Study v2: corrections for images produced by src.optics
+# --------------------------------------------------------------------------
+
+def _fit_backscatter(r: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+    """Fit y ~= B_inf * (1 - exp(-beta r)) by grid search over beta."""
+    best = (np.inf, 0.0, 1.0)
+    for beta in np.geomspace(0.1, 5.0, 200):  # physical range for coastal/oceanic water
+        f = 1.0 - np.exp(-beta * r)
+        b_inf = float((y * f).sum() / max((f * f).sum(), 1e-12))
+        err = float(((y - b_inf * f) ** 2).sum())
+        if err < best[0]:
+            best = (err, b_inf, beta)
+    return best[1], best[2]
+
+
+def sea_thru_estimated(rgb_u8: np.ndarray, range_m: np.ndarray, n_bins: int = 10,
+                       dark_pct: float = 1.0) -> tuple[np.ndarray, dict]:
+    """Sea-thru-style correction with parameters estimated from the image.
+
+    Follows the structure of Akkaynak & Treibitz (CVPR 2019): backscatter is fit
+    to the darkest pixels in each range bin, then per-channel attenuation is fit
+    to the range-binned mean of the backscatter-free signal (a grey-world-per-
+    range assumption standing in for Sea-thru's local illuminant map). Range is
+    assumed known, as it would be from stereo or SfM; water parameters are not.
+    """
+    from .optics import linear_to_srgb, srgb_to_linear
+
+    lin = srgb_to_linear(rgb_u8.astype(np.float32) / 255.0)
+    r = range_m.astype(np.float32)
+    edges = np.quantile(r, np.linspace(0, 1, n_bins + 1))
+    idx = np.clip(np.searchsorted(edges, r, side="right") - 1, 0, n_bins - 1)
+    near = r < 0.99 * r.max()  # exclude clamped far pixels (sky) from the attenuation fit
+    out = np.empty_like(lin)
+    params = {}
+    for c in range(3):
+        ch = lin[..., c]
+        rb, dark, mean_r, mean_d, w = [], [], [], [], []
+        for k in range(n_bins):
+            m = idx == k
+            if m.sum() < 50:
+                continue
+            rb.append(float(r[m].mean()))
+            dark.append(float(np.percentile(ch[m], dark_pct)))
+        b_inf, beta_b = _fit_backscatter(np.array(rb), np.array(dark))
+        D = np.clip(ch - b_inf * (1.0 - np.exp(-beta_b * r)), 0.0, None)
+        for k in range(n_bins):
+            m = (idx == k) & near
+            if m.sum() < 50:
+                continue
+            mean_r.append(float(r[m].mean()))
+            mean_d.append(max(float(D[m].mean()), 1e-6))
+            w.append(float(m.sum()))
+        A = np.stack([np.ones(len(mean_r)), -np.array(mean_r)], 1) * np.sqrt(w)[:, None]
+        logA, beta_d = np.linalg.lstsq(A, np.log(mean_d) * np.sqrt(w), rcond=None)[0]
+        beta_d = max(float(beta_d), 0.0)
+        out[..., c] = D / (np.exp(logA) * np.exp(-beta_d * r)) * 0.18   # mean reflectance -> 18% grey
+        params[c] = {"B_inf": b_inf, "beta_B": float(beta_b), "beta_D": beta_d}
+    p99 = float(np.percentile(out, 99))
+    out = out * (0.9 / max(p99, 1e-6))
+    return (linear_to_srgb(out) * 255.0 + 0.5).astype(np.uint8), params
+
+
+def sea_thru_oracle(rgb_u8: np.ndarray, range_m: np.ndarray, water, gain: float,
+                    curves=None) -> np.ndarray:
+    """Invert src.optics with the true water parameters and exposure gain.
+
+    An upper bound, not a method: it knows everything the simulator used.
+    Noise, quantisation and the forward-scatter blur are not inverted (the
+    forward term is folded into the transmission).
+    """
+    from .optics import channel_curves, linear_to_srgb, srgb_to_linear
+
+    curves = curves or channel_curves(water)
+    T, F, B = curves.at(range_m)
+    lin = srgb_to_linear(rgb_u8.astype(np.float32) / 255.0) / gain
+    rho = np.clip((lin - B) / np.maximum(T + F, 1e-4), 0.0, 1.0)
+    return (linear_to_srgb(rho) * 255.0 + 0.5).astype(np.uint8)

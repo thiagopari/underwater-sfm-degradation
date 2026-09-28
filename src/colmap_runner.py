@@ -22,6 +22,13 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
     return result.stdout
 
 
+FEATURES = {
+    # name: (FeatureExtraction.type, FeatureMatching.type)
+    "sift": ("SIFT", "SIFT_BRUTEFORCE"),
+    "aliked_lightglue": ("ALIKED_N16ROT", "ALIKED_LIGHTGLUE"),
+}
+
+
 def run_sfm(
     image_dir: Path,
     work_dir: Path,
@@ -31,12 +38,17 @@ def run_sfm(
     init_min_tri_angle: float = 4.0,
     max_image_size: int = 1600,
     clean: bool = True,
+    features: str = "sift",
+    seed: int | None = None,
+    num_threads: int = -1,
 ) -> dict[str, Any]:
-    """Run COLMAP feature extractor + matcher + mapper on image_dir.
+    """Run COLMAP feature extraction + exhaustive matching + incremental mapping.
 
     Uses relaxed SIFT thresholds so heavily-degraded scenes still get *some*
-    features, which lets us measure exactly when the pipeline breaks. Caps
-    image resolution for tractable CPU-only runtime.
+    features, which lets us measure where the pipeline breaks. ``features``
+    selects SIFT or COLMAP 4's built-in ALIKED + LightGlue (ONNX models are
+    downloaded and checksum-verified by COLMAP on first use). ``seed`` fixes
+    COLMAP's random seed so replicate runs are reproducible.
     """
     image_dir = Path(image_dir)
     work_dir = Path(work_dir)
@@ -47,29 +59,40 @@ def run_sfm(
     db_path = work_dir / "database.db"
     sparse_dir = work_dir / "sparse"
     sparse_dir.mkdir(exist_ok=True)
+    extract_type, match_type = FEATURES[features]
+    seed_args = ["--default_random_seed", str(seed)] if seed is not None else []
+    threads = str(num_threads)
 
-    _run([
-        COLMAP_BIN, "feature_extractor",
+    extract = [
+        COLMAP_BIN, "feature_extractor", *seed_args,
         "--database_path", str(db_path),
         "--image_path", str(image_dir),
         "--ImageReader.single_camera", "1",
-        "--SiftExtraction.peak_threshold", str(peak_threshold),
-        "--SiftExtraction.max_num_features", str(max_num_features),
+        "--FeatureExtraction.type", extract_type,
         "--FeatureExtraction.max_image_size", str(max_image_size),
         "--FeatureExtraction.use_gpu", "0",
-    ])
+        "--FeatureExtraction.num_threads", threads,
+    ]
+    if features == "sift":
+        extract += ["--SiftExtraction.peak_threshold", str(peak_threshold),
+                    "--SiftExtraction.max_num_features", str(max_num_features)]
+    _run(extract)
     _run([
-        COLMAP_BIN, "exhaustive_matcher",
+        COLMAP_BIN, "exhaustive_matcher", *seed_args,
         "--database_path", str(db_path),
+        "--FeatureMatching.type", match_type,
         "--FeatureMatching.use_gpu", "0",
+        "--FeatureMatching.num_threads", threads,
     ])
     _run([
-        COLMAP_BIN, "mapper",
+        COLMAP_BIN, "mapper", *seed_args,
         "--database_path", str(db_path),
         "--image_path", str(image_dir),
         "--output_path", str(sparse_dir),
         "--Mapper.init_min_num_inliers", str(init_min_num_inliers),
         "--Mapper.init_min_tri_angle", str(init_min_tri_angle),
+        "--Mapper.num_threads", threads,
+        *(["--Mapper.random_seed", str(seed)] if seed is not None else []),
     ])
 
     # Read features/keypoints per image from the DB
@@ -115,15 +138,12 @@ def _summarize(db_path: Path, sparse_dir: Path, image_dir: Path) -> dict[str, An
             images_txt = m / "images.txt"
             if not images_txt.exists():
                 # try converting
-                try:
-                    _run([
-                        COLMAP_BIN, "model_converter",
-                        "--input_path", str(m),
-                        "--output_path", str(m),
-                        "--output_type", "TXT",
-                    ])
-                except Exception:
-                    continue
+                _run([
+                    COLMAP_BIN, "model_converter",
+                    "--input_path", str(m),
+                    "--output_path", str(m),
+                    "--output_type", "TXT",
+                ])
             if not images_txt.exists():
                 continue
             n_imgs = _count_registered(images_txt)
@@ -132,6 +152,8 @@ def _summarize(db_path: Path, sparse_dir: Path, image_dir: Path) -> dict[str, An
                 best_model = m
 
         if best_model is not None:
+            metrics["model_dir"] = str(best_model)
+            metrics["num_models"] = sum(1 for m in models if m.is_dir())
             metrics["num_registered"] = _count_registered(best_model / "images.txt")
             pts, mean_track, mean_reproj = _stats_points3d(best_model / "points3D.txt")
             metrics["num_3d_points"] = pts

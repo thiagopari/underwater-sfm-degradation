@@ -205,7 +205,7 @@
 <body>
 <header>
     <h1>Underwater SfM Degradation — Interactive Viewer</h1>
-    <p>Move the slider to see how wavelength-dependent Jerlov underwater optics degrade a clear-air image, and what happens to the corresponding COLMAP structure-from-motion reconstruction. Full write-up in <a href="https://github.com/thiagopari/underwater-sfm-degradation#readme">the README on GitHub</a>.</p>
+    <p>Move the slider to see how measured Jerlov water optics and camera noise degrade a clear-air image, and what happens to the corresponding COLMAP structure-from-motion reconstruction. Full write-up in <a href="https://github.com/thiagopari/underwater-sfm-degradation#readme">the README on GitHub</a>.</p>
 </header>
 
 <div class="layout">
@@ -222,12 +222,12 @@
             <div class="control-row">
                 <label>Water condition</label>
                 <input type="range" id="level-slider" min="0" max="6" value="0" step="1" />
-                <span class="level-badge" id="level-badge">baseline</span>
+                <span class="level-badge" id="level-badge">clear</span>
             </div>
             <div class="control-row">
                 <label class="toggle">
                     <input type="checkbox" id="compare-toggle" />
-                    Compare vs baseline
+                    Compare vs clear air
                 </label>
             </div>
         </div>
@@ -239,9 +239,10 @@
             <tr><td>Level</td><td id="m-tag">—</td></tr>
             <tr><td>Water type</td><td id="m-desc">—</td></tr>
             <tr><td>Registered</td><td id="m-reg">—</td></tr>
+            <tr><td>Accurate poses (&lt;10 cm, &lt;2°)</td><td id="m-acc">—</td></tr>
+            <tr><td>Camera ATE RMSE</td><td id="m-ate">—</td></tr>
             <tr><td>3D points</td><td id="m-pts">—</td></tr>
-            <tr><td>Mean features / image</td><td id="m-feat">—</td></tr>
-            <tr><td>Mean reproj. error</td><td id="m-reproj">—</td></tr>
+            <tr><td>Auto-exposure gain</td><td id="m-gain">—</td></tr>
         </table>
         <div class="status-strip" id="status">Loading data…</div>
         <canvas id="minichart"></canvas>
@@ -249,7 +250,7 @@
 </div>
 
 <footer>
-    <p>Depth: DPT-SwinV2 · Degradation: Sea-thru-style Jerlov model · SfM: COLMAP · <a href="https://github.com/thiagopari/underwater-sfm-degradation">source</a></p>
+    <p>Depth: DPT-SwinV2 aligned to COLMAP · Optics: measured Jerlov IOPs (Williamson &amp; Hollins 2022), spectral rendering + sensor noise · SfM: COLMAP 4 · 3 m median standoff · <a href="https://github.com/thiagopari/underwater-sfm-degradation">source</a></p>
 </footer>
 
 <script>
@@ -258,13 +259,13 @@ let LEVELS = [];
 let FRAMES = [];
 let METRICS = {};
 const TYPE_DESCS = {
-    "baseline":  "clear air (reference)",
-    "I":  "Jerlov I — clearest open ocean",
-    "II": "Jerlov II — clear coastal water",
-    "III":"Jerlov III — turbid coastal water",
-    "1C": "Jerlov 1C — harbor (moderately turbid)",
-    "3C": "Jerlov 3C — harbor (very turbid)",
-    "5C": "Jerlov 5C — harbor (extremely turbid)"
+    "clear": "clear air (reference)",
+    "IB":  "Jerlov IB: average open ocean",
+    "II":  "Jerlov II: clear coastal / open ocean",
+    "III": "Jerlov III: turbid open ocean",
+    "1C":  "Jerlov 1C: clearest coastal",
+    "3C":  "Jerlov 3C: coastal",
+    "5C":  "Jerlov 5C: turbid coastal"
 };
 
 async function boot() {
@@ -302,7 +303,7 @@ function update() {
     if (compare && idx !== 0) {
         viewer.innerHTML = `
             <div class="side-by-side">
-                <div><span class="label">baseline</span><img src="${IMAGE_BASE}/${baseline.tag}/${frame}"></div>
+                <div><span class="label">clear</span><img src="${IMAGE_BASE}/${baseline.tag}/${frame}"></div>
                 <div><span class="label">${level.short}</span><img src="${IMAGE_BASE}/${level.tag}/${frame}"></div>
             </div>`;
     } else {
@@ -314,29 +315,27 @@ function update() {
     document.getElementById("m-desc").textContent = TYPE_DESCS[level.short] || level.short;
 
     const m = METRICS[level.tag] || {};
-    const nReg = m.num_registered || 0;
-    const nIn = m.num_input_images || 30;
-    const nPts = m.num_3d_points || 0;
-    const feats = m.features_per_image || [];
-    const meanFeats = feats.length ? Math.round(feats.reduce((a, b) => a + b, 0) / feats.length) : 0;
-    const reproj = m.mean_reproj_error != null ? m.mean_reproj_error.toFixed(3) : "—";
-
-    document.getElementById("m-reg").innerHTML = `${nReg} / ${nIn} <span class="metric-highlight">(${(nReg / Math.max(nIn,1) * 100).toFixed(0)}%)</span>`;
-    document.getElementById("m-pts").textContent = nPts.toLocaleString();
-    document.getElementById("m-feat").textContent = meanFeats.toLocaleString();
-    document.getElementById("m-reproj").textContent = reproj;
+    const nIn = 30;
+    const nReg = m.num_registered ?? 0;
+    const nAcc = m.num_accurate ?? 0;
+    const seeds = m.n ? ` <span class="metric-highlight">(mean of ${m.n} seeds)</span>` : "";
+    document.getElementById("m-reg").innerHTML = `${nReg.toFixed(1)} / ${nIn}${seeds}`;
+    document.getElementById("m-acc").innerHTML = `${nAcc.toFixed(1)} / ${nIn}`;
+    document.getElementById("m-ate").textContent = m.ate_rmse_m != null ? (m.ate_rmse_m < 0.01 ? `${(m.ate_rmse_m * 1000).toFixed(1)} mm` : `${m.ate_rmse_m.toFixed(2)} m`) : "—";
+    document.getElementById("m-pts").textContent = m.num_3d_points != null ? Math.round(m.num_3d_points).toLocaleString() : "—";
+    document.getElementById("m-gain").textContent = m.mean_gain != null ? `${m.mean_gain.toFixed(1)}×` : "—";
 
     const status = document.getElementById("status");
-    if (nReg === nIn && nIn > 0) {
-        status.innerHTML = `<span class="ok">All ${nIn} frames registered.</span> Reconstruction quality: <strong>${nPts.toLocaleString()}</strong> 3D points.`;
-    } else if (nReg >= 0.75 * nIn) {
-        status.innerHTML = `<strong>${nIn - nReg}</strong> of ${nIn} frames failed to register. Reconstruction usable but degraded.`;
-    } else if (nReg > 2) {
-        status.innerHTML = `<span class="fail">Partial reconstruction only:</span> ${nReg} of ${nIn} frames registered.`;
-    } else if (nIn > 0) {
-        status.innerHTML = `<span class="fail">Reconstruction collapsed.</span> Feature matching insufficient for SfM at this turbidity.`;
-    } else {
+    if (!m.n) {
         status.innerHTML = `<em>No metrics available for this level.</em>`;
+    } else if (nAcc >= 29) {
+        status.innerHTML = `<span class="ok">Poses match the clear-air reference.</span>`;
+    } else if (nAcc >= 20) {
+        status.innerHTML = `Usable but degraded: <strong>${(nIn - nAcc).toFixed(0)}</strong> cameras missing or wrong.`;
+    } else if (nAcc > 2) {
+        status.innerHTML = `<span class="fail">Partial reconstruction only:</span> ${nAcc.toFixed(1)} of ${nIn} poses accurate.`;
+    } else {
+        status.innerHTML = `<span class="fail">Reconstruction collapsed.</span> No usable camera trajectory at this water type.`;
     }
 
     drawChart(idx);
@@ -354,8 +353,7 @@ function drawChart(activeIdx) {
     // build bars of registration rate
     const rates = LEVELS.map(l => {
         const m = METRICS[l.tag] || {};
-        const n = Math.max(m.num_input_images || 1, 1);
-        return 100 * (m.num_registered || 0) / n;
+        return 100 * (m.num_accurate || 0) / 30;
     });
     const barW = (w - 40) / LEVELS.length * 0.7;
     const gap = (w - 40) / LEVELS.length * 0.3;
@@ -374,7 +372,7 @@ function drawChart(activeIdx) {
     ctx.fillStyle = "#94a3b8";
     ctx.font = "9px system-ui";
     ctx.textAlign = "left";
-    ctx.fillText("Registration rate across sweep (%)", 20, 12);
+    ctx.fillText("Accurate camera poses across water types (%)", 20, 12);
 }
 
 boot().catch(err => {

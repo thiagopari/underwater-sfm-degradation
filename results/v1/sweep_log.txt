@@ -1,0 +1,25 @@
+Running COLMAP on 7 levels
+
+[1/7] level_00_baseline  (cached)
+  registered=30/30  points=12269  reproj=0.527
+
+[2/7] level_01_I_x1.00
+  registered=30/30  points=12111  reproj=0.545  (140.2s)
+
+[3/7] level_02_II_x1.00
+  registered=30/30  points=12022  reproj=0.546  (122.9s)
+
+[4/7] level_03_III_x1.00
+  registered=30/30  points=11960  reproj=0.553  (136.3s)
+
+[5/7] level_04_1C_x1.00
+  registered=30/30  points=12178  reproj=0.567  (204.2s)
+
+[6/7] level_05_3C_x1.00
+  registered=30/30  points=8065  reproj=0.609  (159.8s)
+
+[7/7] level_06_5C_x1.00
+  registered=24/30  points=961  reproj=0.641  (91.8s)
+
+Total runtime: 855.1s
+Aggregated metrics: results/sweep_metrics.json

@@ -1,4 +1,7 @@
-"""Monocular depth estimation via HuggingFace transformers (DPT).
+"""DPT depth maps. Study v2 does not use the metric scaling below directly: src/depth_align.py
+fits each cached map to the clear-air COLMAP model instead (see that module).
+
+Monocular depth estimation via HuggingFace transformers (DPT).
 
 Returns a per-pixel depth map rescaled to a plausible underwater standoff
 range (default 0.5m to 5m) so downstream Jerlov degradation produces visible

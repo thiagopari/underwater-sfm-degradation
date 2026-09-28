@@ -1,4 +1,11 @@
-"""Wavelength-dependent Jerlov underwater optics degradation.
+"""[v1, superseded by src/optics.py] Kept only to reproduce the legacy v1 results in results/v1/.
+
+Known problems (found in the v2 review): it uses the diffuse coefficient Kd along the
+line of sight instead of beam attenuation, the coastal-type coefficients have blue
+attenuating less than green (backwards), the veiling colours are hand-picked, and
+there is no sensor noise.
+
+Wavelength-dependent Jerlov underwater optics degradation.
 
 Applies a Sea-thru-like image formation model to convert clear-air RGB + depth
 into a synthetically-underwater RGB image, using published Jerlov water-type

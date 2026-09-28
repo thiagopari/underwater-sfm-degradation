@@ -12,6 +12,7 @@ sweep/
 sweep_corrected/
 sweep_fine/
 results/level_*/
+results/v1/level_*/
 results/*_log.txt
 
 # Keep the aggregated results (small) and figures
@@ -22,3 +23,6 @@ results/*_log.txt
 # Local-only publishing notes (not part of the public repo)
 PUSH_INSTRUCTIONS.md
 PORTFOLIO_SNIPPET.md
+
+# v2 working files (regenerable)
+work/

@@ -1,186 +1,38 @@
-# When does underwater turbidity break SfM?
+# From v1 to v2: what was wrong, and what changed
 
-*A weekend research project, motivated by a gap in the underwater robotics
-literature.*
+The first version of this study (July 2026, kept in `legacy_v1/`, `results/v1/`,
+`figures/v1/`) concluded that off-the-shelf RGB SfM "survives through Jerlov 1C"
+and that the usable band was "wider than sonar-vendor marketing implies". A
+multi-reviewer audit in September 2026 found that those conclusions came from
+the simulator rather than the water. This file records what the audit found and
+how v2 addresses each point, because the corrections are part of the result.
 
-## The gap
+## What the audit found
 
-If you go looking for guidance on RGB-based 3D reconstruction underwater,
-you find two disjoint conversations:
+| # | Problem in v1 | Why it matters | v2 fix |
+|---|---|---|---|
+| 1 | Attenuated along the line of sight with the **diffuse** coefficient Kd (`src/jerlov.py`) | Kd describes how sunlight dims with depth; the camera path needs **beam** attenuation c = a + b, typically several times larger in coastal water. Degradation was understated. A quick check with 2.5 x Kd already collapsed 1C to 25/30 cameras. | Per-wavelength c from measured IOPs (Williamson & Hollins 2022) |
+| 2 | Coastal types had blue attenuating **less** than green | Backwards: dissolved organic matter absorbs blue in coastal water, which turns it green-yellow, not blue | Spectral rendering from measured a(lambda), b(lambda); coastal images now look coastal |
+| 3 | Veiling colours hand-picked; direct and backscatter tied to one coefficient | Not physical; contradicts Akkaynak & Treibitz (2018) | Single-scattering veiling estimate b_b E / (2c); wideband integration makes beta_D != beta_B |
+| 4 | **Each image's depth min-max normalised to 0.5-5 m**, and DPT inverse depth used as linear depth | The same wall had a different range in every view; the "5 m" choice decided where the cliff appeared | DPT fitted to the clear-air COLMAP model (scale + shift in inverse depth, 82% inliers, 2.7% median error); one global scale sets the standoff; standoff is swept |
+| 5 | No sensor noise | The main way turbidity hurts matching is fewer photons, more gain, more noise. Without it, SIFT's affine invariance made the degradation nearly free. | Poisson shot noise + read noise, auto-exposure gain, 8-bit sRGB, JPEG |
+| 6 | Only registration and point counts | "Registered" does not mean "right" | Camera ATE and rotation error against the clear-air reference after similarity alignment; "accurate pose" = < 10 cm and < 2 deg |
+| 7 | One COLMAP run per condition, no seeds | Differences could have been noise | 3 seeds (main sweep), 2 (standoff, ablation); clear-air replicates show the run-to-run floor is 0.3 mm |
+| 8 | "Oracle Sea-thru rescues 5C" presented as a headline | The oracle inverted the exact model that created the damage, so it was true by construction | Kept only as a labelled upper bound, next to a Sea-thru-style correction whose parameters are **estimated** from the image |
+| 9 | Unsupported claims about sonar vendors and industry practice; "a cliff" from 7 coarse points | Not evidence | Removed |
+| 10 | Factual slips in the old writeup (128 vs 30 images, "registration starts to hurt at 3C" when it was 30/30, "nothing hand-tuned") | Credibility | This file replaces it |
+| 11 | Data step not reproducible (no URL, no checksums), unpinned deps, `make all` skipped stages | Nobody could rerun it | `scripts/get_data.py` (URL + SHA-256 per frame), pinned `requirements.txt`, `make study` runs every stage, resumable |
 
-- **Optical-inspection vendors** (Voyis, Blue Atlas, others) publish accuracy
-  numbers for clean water: sub-millimeter geometry at close range with the
-  right lighting.
-- **Sonar-inspection vendors** (IQUA, Coda Octopus) publish coverage numbers
-  for turbid harbors: continuous 3D even when visibility drops below a meter.
+## What stayed
 
-What's missing from both is the middle ground: a quantitative answer to
-"at what turbidity does off-the-shelf RGB structure-from-motion actually
-break?" Everyone assumes it breaks *somewhere* between "clear ocean" and
-"harbor sludge," but the boundary isn't in the literature — and it matters,
-because it's the boundary at which you switch product architecture from
-stereo-first to sonar-first.
+The question, the dataset (COLMAP's south-building, 30 frames), COLMAP
+incremental SfM with relaxed SIFT thresholds, the idea of a controlled sweep, and
+the colour-correction ablation. The v1 numbers are preserved in `results/v1/` so
+the difference can be checked.
 
-This project is a small, controlled benchmark that produces a first-pass
-answer.
+## What v2 still does not do
 
-## Approach
-
-Take a standard clear-air photogrammetry dataset (COLMAP's `south-building`,
-128 architectural photos with a known-good ground-truth reconstruction).
-Simulate what those images would look like underwater at seven different
-Jerlov water types, from clearest open ocean to extremely turbid harbor.
-Then run the exact same COLMAP SfM pipeline on each degraded set and see
-what happens.
-
-There are three moving pieces:
-
-1. **Depth estimation.** Every image needs a per-pixel depth for the
-   underwater optics model. I use DPT-SwinV2 (Vision Transformer for dense
-   prediction) via HuggingFace — a small, fast model that runs in ~1s per
-   image on Apple Silicon MPS. The depth is not metric; I rescale it to a
-   plausible 0.5–5m underwater standoff range so the spatial variation
-   drives visible per-pixel attenuation.
-
-2. **Jerlov image formation.** For each pixel with depth `z` and per-channel
-   diffuse attenuation coefficient `Kd`, apply the Sea-thru-style formation
-   model:
-
-   ```
-   I_c = J_c · exp(-Kd_c · z)  +  B∞_c · (1 - exp(-Kd_c · z))
-   ```
-
-   The first term is the direct signal attenuated by absorption + scattering
-   along the viewing ray; the second is the veiling light (backscatter)
-   accumulating with distance. `Kd_c` values are per Jerlov's 1976
-   classification at representative R/G/B wavelengths (650/550/450 nm), and
-   `B∞_c` is a blue-green veiling color that darkens and shifts hue as water
-   turbidity increases.
-
-3. **COLMAP incremental SfM.** For each of the seven degraded datasets:
-   SIFT feature extraction, exhaustive matching, incremental mapping.
-   Feature thresholds are relaxed so *some* features survive even in the
-   worst degradation — otherwise the study collapses to "the pipeline finds
-   no features."
-
-Per level I capture: images successfully registered, reconstructed 3D
-points, mean SIFT features per image, mean reprojection error, and the
-per-image feature count distribution. Numbers are in
-`results/sweep_metrics.json`.
-
-## Why this is a legitimate study, not a demo
-
-Two design choices matter:
-
-- The reference reconstruction (baseline, clear air) is *the same COLMAP
-  pipeline* run on the *undegraded* south-building images. So every
-  degraded reconstruction is compared apples-to-apples against a known-good
-  baseline produced by the same code.
-- The Jerlov coefficients are published, not hand-tuned. Nothing in the
-  degradation pipeline is fit to the observed reconstruction results — the
-  optics model is fixed at Jerlov's canonical values and only the water
-  type changes across the sweep.
-
-That gives the numbers scientific weight rather than "here's a slider that
-makes the picture blurrier."
-
-## Color-correction ablation
-
-Two natural counter-arguments to the finding above:
-
-1. "SfM fails because the image is blue — just white-balance it and it works."
-2. "SfM fails because we don't have Sea-thru — apply Sea-thru with the true
-   depth and Kd and it works."
-
-I test both, with the strongest possible version of each: Shades-of-Gray
-(a robust classical white balance) and Sea-thru with **oracle** depth and
-oracle Kd (i.e., the exact parameters used to synthesize the degradation).
-
-Results at the failure-region levels:
-
-| Level | uncorrected | +Shades-of-Gray | +Sea-thru (oracle) |
-|-------|-------------|-----------------|--------------------|
-| 3C | 30/30, 8065 pts | 30/30, **3994 pts** ↓50% | 30/30, 7000 pts ↓13% |
-| 5C | 24/30, 961 pts | **4/30, 115 pts** collapse | **29/30, 1813 pts** ↑90% |
-
-Two things jump out:
-
-**Naive white balance actively hurts, and it hurts worse the more turbid
-the water.** At 3C it halves the point count. At 5C it drops the
-registration rate from 24/30 to 4/30. Physically: per-channel gain
-amplifies noise in the low-signal (red) channel more than it amplifies
-signal, and SIFT descriptors — which are gradient-based and locally
-normalized — become less discriminative. The matcher rejects more
-pairs. The reconstruction thins out.
-
-**Depth-aware physics-based Sea-thru genuinely recovers 5C.** From 24
-frames registered → 29, and from 961 points → 1813 (almost a 2× recovery
-in reconstruction density). This is the strongest positive result in
-the study: at the point where the uncorrected pipeline is nearly
-useless, oracle Sea-thru brings it back to something usable — because
-inverting the *spatial* attenuation term with per-pixel depth is
-fundamentally different from just rescaling the global color.
-
-The industry lesson is precise: **turbid-water RGB reconstruction needs
-depth-aware color correction, not just white balance.** Stereo gives you
-that depth for free, which is why stereo-RGB underwater rigs (Voyis,
-Deep Trekker) can meaningfully target turbid coastal work. Sonar+RGB
-architectures cannot — the sonar depth is at the wrong resolution and
-not per-pixel-aligned to the camera — which is why IQUA-style
-sonar-primary systems don't try Sea-thru at all; they use sonar for
-geometry and RGB opportunistically.
-
-*Caveat: real Sea-thru estimates Kd from the image itself via
-dark-channel priors. That estimation step adds error the oracle
-version here doesn't have. The oracle result is an **upper bound** on
-what a real-world Sea-thru pipeline could deliver.*
-
-## The surprise
-
-Here's the finding I didn't expect: **SIFT-based incremental SfM survives
-much further into the turbidity sweep than the image degradation would
-suggest.** By Jerlov III the RMS contrast has dropped ~58% and the image
-looks obviously bad, but the reconstruction is still ~30/30 frames
-registered with a full-density point cloud. Feature extraction and
-matching keep working long past the point at which the picture would
-fail a human "does this look usable" test.
-
-The reason is straightforward. SIFT descriptors are constructed from
-gradient orientation histograms normalized to unit length — a global
-color shift and even substantial contrast reduction don't move the
-descriptors much. The break happens when *local* edges get washed out
-below the noise floor, which requires an order-of-magnitude reduction in
-Laplacian variance — and that only happens deep into harbor-water
-territory.
-
-## What this means for underwater robots
-
-For a first-pass sensor architecture decision:
-
-- **Clear ocean, clear coastal water (Jerlov I–II):** stereo-RGB SfM is
-  fine. Modest quality loss, near-baseline registration.
-- **Turbid coastal water (Jerlov III):** image quality drops sharply but
-  reconstruction quality does not. This is a wider "usable" band than
-  most marketing collateral would have you believe — with the caveat
-  that a real hull is more feature-poor than an architectural facade.
-- **Harbor water (Jerlov 1C+):** approaching the boundary. Registration
-  starts to hurt at 3C. Some form of color correction and/or targeted
-  lighting is required, and by 5C SfM collapses regardless.
-
-The practical takeaway isn't "RGB always works." It's that the *industry
-common wisdom* — "RGB dies fast underwater" — overstates the effect for
-the SfM feature-matching pipeline. The image looks worse than the
-reconstruction gets. This has product implications: a stereo-RGB rig
-with strong lighting probably covers more of the practical operating
-envelope than a sonar-first vendor will tell you. It also has planning
-implications: you can't judge SfM viability by eyeballing the video
-feed.
-
-## Reproducing
-
-Full instructions in [`README.md`](README.md). Short version:
-
-```
-make venv    # once
-make all     # end-to-end pipeline, ~20 min on M-series laptop
-```
+See *Limitations* in the README. The big ones: the scene is a terrestrial
+building rather than a hull or seabed, lighting is ambient only (no vehicle
+lights), forward scatter uses one blur width, and there is no validation on real
+underwater footage yet.
