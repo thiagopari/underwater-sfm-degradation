@@ -18,3 +18,7 @@ results/*_log.txt
 !results/*.json
 !figures/
 
+
+# Local-only publishing notes (not part of the public repo)
+PUSH_INSTRUCTIONS.md
+PORTFOLIO_SNIPPET.md
