@@ -6,6 +6,8 @@
 
 **How much does wavelength-dependent underwater optics break structure-from-motion?**
 
+**[Live interactive viewer](https://thiagopari.github.io/underwater-sfm-degradation/)**: scrub through the water types and watch the reconstruction degrade.
+
 A reproducible, zero-cost benchmark that takes a standard clear-air photogrammetry
 dataset (COLMAP's `south-building`), applies a physically-motivated Jerlov
 underwater image formation model across seven turbidity levels, and measures
