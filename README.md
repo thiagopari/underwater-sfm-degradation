@@ -197,8 +197,9 @@ any sub-model.
 ## Reproduce
 
 Needs Python 3.10+, COLMAP 4.x on `PATH` (CPU build is fine), about 3 GB of disk.
-The full study is about 3.6 hours of compute on an M-series MacBook (the
-ALIKED stage is about 1.5 h of that). Every stage is resumable; on macOS run it
+The full study is about 3.6 hours of active compute on an M-series MacBook
+(SIFT runs take about 2.2 min, ALIKED runs about 13 min). The logged wall clock
+is longer, because the laptop slept during several runs. Every stage is resumable; on macOS run it
 under `caffeinate -i` on AC power so the machine does not sleep mid-run. 
 ```bash
 make venv          # pinned requirements

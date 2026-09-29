@@ -15,7 +15,12 @@
 | Transition (3C at 3.5/4 m, 1C at 4.5/5 m, 2 seeds) | 8 | ~17 min |
 | ALIKED + LightGlue (7 conditions, 1 seed) | 7 | ~90 min |
 | Colour-correction ablation (3C, 5C x 3 methods x 2 seeds) | 12 | ~25 min |
-| **Total** | **56** | **~3.5 h** |
+| Sensitivity (veil x10/x30, full well x4/x0.25 at 2 conditions) | 8 | ~20 min |
+| **Total** | **64** | **~3.6 h active compute** |
+
+The logged runtimes in `results/v2/runs.jsonl` add up to more than this because
+the laptop slept during several runs; per-run compute is ~2.2 min (SIFT) and
+~13 min (ALIKED).
 
 A SIFT run takes 2-2.5 min and peaks at about 2.4 GB of memory; an ALIKED +
 LightGlue run takes about 13 min on CPU. `run_study.py` waits whenever free
