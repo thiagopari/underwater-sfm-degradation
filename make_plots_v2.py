@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.optics import DESCRIPTIONS, WATER_TYPES, Sensor, Water, degrade_image
+from src.optics import DESCRIPTIONS, WATER_TYPES, Sensor, Water, degrade_image, effective_coefficients
 
 ROOT = Path(__file__).resolve().parent
 RES = ROOT / "results" / "v2"
@@ -50,13 +50,14 @@ def fmt(rs, key, digits=0, scale=1.0):
 
 def table(rows_by_type, title, extra=""):
     out = [f"### {title}", "", *( [extra, ""] if extra else [] ),
-           "| Water | n | Registered /30 | Accurate poses /30 | ATE RMSE (mm) | 3D points | Mean gain |",
-           "|---|---|---|---|---|---|---|"]
+           "| Water | n | Largest model /30 | Any model /30 | Sub-models | Accurate poses /30 | ATE RMSE (mm) | 3D points | Mean gain |",
+           "|---|---|---|---|---|---|---|---|---|"]
     for t in ORDER:
         rs = rows_by_type.get(t)
         if not rs:
             continue
         out.append(f"| {t if t != 'clear' else 'clear air'}{' (' + DESCRIPTIONS[t] + ')' if t in DESCRIPTIONS else ''} | {len(rs)} | {fmt(rs, 'num_registered')} | "
+                   f"{fmt(rs, 'num_registered_any_model')} | {fmt(rs, 'num_models')} | "
                    f"{fmt(rs, 'num_accurate')} | {fmt(rs, 'ate_rmse_m', 1, 1000)} | {fmt(rs, 'num_3d_points')} | "
                    f"{fmt(rs, 'mean_gain', 1)} |")
     return "\n".join(out) + "\n"
@@ -95,8 +96,8 @@ def main():
     abl = [r for r in runs if r["stage"] == "ablation"]
     if abl:
         md += ["### Colour-correction ablation (SIFT, 3 m)", "",
-               "| Water | Correction | n | Registered /30 | Accurate poses /30 | ATE RMSE (mm) | 3D points |",
-               "|---|---|---|---|---|---|---|"]
+               "| Water | Correction | n | Largest model /30 | Any model /30 | Accurate poses /30 | ATE RMSE (mm) | 3D points |",
+               "|---|---|---|---|---|---|---|---|"]
         for t in WATER_TYPES:
             base = main_g.get(t, [])
             variants = [("none", base)] + [(c, [r for r in abl if r["water_type"] == t and r["correction"] == c])
@@ -105,8 +106,25 @@ def main():
                 continue
             for c, rs in variants:
                 if rs:
-                    md.append(f"| {t} | {c} | {len(rs)} | {fmt(rs, 'num_registered')} | {fmt(rs, 'num_accurate')} | "
+                    md.append(f"| {t} | {c} | {len(rs)} | {fmt(rs, 'num_registered')} | {fmt(rs, 'num_registered_any_model')} | {fmt(rs, 'num_accurate')} | "
                               f"{fmt(rs, 'ate_rmse_m', 1, 1000)} | {fmt(rs, 'num_3d_points')} |")
+        md.append("")
+    sens = [r for r in runs if r["stage"] == "sensitivity"]
+    if sens:
+        md += ["### Sensitivity: veiling strength and photon budget (SIFT, seed 0)", "",
+               "Baseline values: veil x1, full well 5,000 e-. Reference rows are the seed-0 runs of the main/transition stages.", "",
+               "| Condition | Optical depth | Veil | Full well (e-) | Largest model /30 | Any model /30 | Sub-models | Accurate /30 | 3D points |",
+               "|---|---|---|---|---|---|---|---|---|"]
+        base = {("3C", 3.0): "main_3C_3m_sift_none_s0", ("1C", 5.0): "transition_1C_5m_sift_none_s0"}
+        by_tag = {r["tag"]: r for r in runs}
+        for (w, d), btag in base.items():
+            tau = effective_coefficients(Water(w), r=d)["beta_D"][1] * d
+            rows = [by_tag[btag]] if btag in by_tag else []
+            rows += [r for r in sens if r["water_type"] == w and r["standoff_m"] == d]
+            for r in rows:
+                md.append(f"| {w} @ {d:g} m | {tau:.2f} | x{r.get('veil_scale', 1.0):g} | {r.get('full_well_e', 5000.0):,.0f} | "
+                          f"{r['num_registered']} | {r.get('num_registered_any_model', 'n/a')} | {r.get('num_models', 'n/a')} | "
+                          f"{r.get('num_accurate', 0)} | {r['num_3d_points']:,} |")
         md.append("")
     (RES / "summary.md").write_text("\n".join(md))
 
@@ -147,8 +165,8 @@ def main():
         fig.tight_layout(); fig.savefig(FIG / "standoff.png", dpi=150); plt.close(fig)
 
     # Figure 2b: every SIFT run against median optical depth (green beta_D x median standoff)
-    from src.optics import effective_coefficients
-    pts = [r for r in runs if r["features"] == "sift" and r["correction"] == "none" and r["water_type"] != "clear"]
+    pts = [r for r in runs if r["features"] == "sift" and r["correction"] == "none" and r["water_type"] != "clear"
+           and r["stage"] != "sensitivity"]
     if pts:
         fig, ax = plt.subplots(figsize=(6.5, 4))
         for d, mk in ((1.5, "s"), (3.0, "o"), (3.5, "D"), (4.0, "D"), (4.5, "v"), (5.0, "v"), (6.0, "^")):
@@ -157,13 +175,17 @@ def main():
                 continue
             tau = [effective_coefficients(Water(r["water_type"]), r=d)["beta_D"][1] * d for r in sel]
             ax.scatter(tau, [r["num_accurate"] for r in sel], marker=mk, alpha=0.7, label=f"{d:g} m standoff")
+            split = [(t, r) for t, r in zip(tau, sel) if r.get("num_models", 1) > 1 and r["correction"] == "none"]
+            if split:
+                ax.scatter([t for t, _ in split], [r["num_registered_any_model"] for _, r in split], marker=mk,
+                           facecolors="none", edgecolors="k", alpha=0.6)
             for r, t in zip(sel, tau):
                 if r["seed"] == 0:
                     ax.annotate(r["water_type"], (t, r["num_accurate"]), textcoords="offset points", xytext=(4, 4), fontsize=7)
         ax.axvspan(2.42, 2.68, color="gray", alpha=0.2, label="observed transition")
-        ax.set_xlabel("median optical depth  (green beta_D x median range)")
-        ax.set_ylabel("accurate poses of 30"); ax.set_ylim(-1, 31); ax.grid(alpha=0.3); ax.legend(fontsize=8)
-        ax.set_title("Water type and distance collapse onto one axis")
+        ax.set_xlabel("median optical depth  (green beta_D x median scene depth)")
+        ax.set_ylabel("accurate poses of 30 (largest model)"); ax.set_ylim(-1, 31); ax.grid(alpha=0.3); ax.legend(fontsize=7)
+        ax.set_title("SfM against optical depth (hollow = cameras in any sub-model)", fontsize=10)
         fig.tight_layout(); fig.savefig(FIG / "optical_depth.png", dpi=150); plt.close(fig)
 
     # Figure 3: ablation

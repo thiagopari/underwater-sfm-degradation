@@ -15,6 +15,7 @@ help:
 	@echo "  transition optical depth 2.4-3.2 fill-in (~20 min)"
 	@echo "  aliked     ALIKED + LightGlue across water types (~25 min)"
 	@echo "  ablation   colour-correction ablation (~30 min)"
+	@echo "  sensitivity veil x10/x30 and photon budget x4/x0.25 at the transition (~20 min)"
 	@echo "  study      all stages above, in order (resumable)"
 	@echo "  plots      results/v2/summary.md + figures/v2/"
 	@echo "  viewer     package viewer/ for GitHub Pages"
@@ -36,13 +37,13 @@ depth:
 prep:
 	$(PY) -c "import cv2, pathlib; o = pathlib.Path('work/data_1600'); o.mkdir(parents=True, exist_ok=True); [cv2.imwrite(str(o / p.name), cv2.resize(cv2.imread(str(p)), (1600, 1200), interpolation=cv2.INTER_AREA), [cv2.IMWRITE_JPEG_QUALITY, 95]) for p in sorted(pathlib.Path('data').glob('*.JPG'))]"
 
-reference main standoff transition aliked:
+reference main standoff transition aliked sensitivity:
 	$(PY) run_study.py $@
 
 ablation:
 	$(PY) run_study.py ablation --levels 3C 5C
 
-study: reference main standoff transition aliked ablation
+study: reference main standoff transition aliked ablation sensitivity
 
 plots:
 	$(PY) make_plots_v2.py

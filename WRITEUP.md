@@ -23,6 +23,23 @@ how v2 addresses each point, because the corrections are part of the result.
 | 10 | Factual slips in the old writeup (128 vs 30 images, "registration starts to hurt at 3C" when it was 30/30, "nothing hand-tuned") | Credibility | This file replaces it |
 | 11 | Data step not reproducible (no URL, no checksums), unpinned deps, `make all` skipped stages | Nobody could rerun it | `scripts/get_data.py` (URL + SHA-256 per frame), pinned `requirements.txt`, `make study` runs every stage, resumable |
 
+## Found in the independent review of v2 (and fixed)
+
+- **Rotation error used a centres-only alignment.** A near-collinear camera path
+  left a roll ambiguity, which made one 5C run look like 10 wrong cameras. Now
+  rotations are compared after the best rotation-only alignment, plus an
+  alignment-free relative-rotation error (`src/geometry.py`), and every run was
+  rescored from its saved model (`run_study.py rescore`).
+- **Only the largest model was counted.** The "drop" to 16–17 cameras at τ ≈ 2.7
+  turned out to be the map splitting into two sub-models with 29–30 cameras
+  registered in total. Both counts are now reported, and the findings describe
+  three regimes (complete map, split map, lost cameras).
+- **Veiling light probably too weak, and the τ collapse partly by construction.**
+  A sensitivity stage (veil x10/x30, photon budget x4/x0.25) shows how far the
+  transition moves, and the README now says that collapsing onto optical depth is
+  expected in this model rather than discovered.
+- **Number slips** ("within 10 mm", run count, runtime) corrected.
+
 ## What stayed
 
 The question, the dataset (COLMAP's south-building, 30 frames), COLMAP

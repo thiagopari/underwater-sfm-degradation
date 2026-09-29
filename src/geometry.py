@@ -116,6 +116,25 @@ def rotation_angle_deg(R: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1.0, 1.0))))
 
 
+def align_rotations(R_ref: list[np.ndarray], R_est: list[np.ndarray]) -> np.ndarray:
+    """Best world rotation A with R_est_i A^T ~= R_ref_i (chordal L2 mean, projected to SO(3))."""
+    M = sum(Rr.T @ Re for Rr, Re in zip(R_ref, R_est))
+    U, _, Vt = np.linalg.svd(M)
+    D = np.diag([1.0, 1.0, np.sign(np.linalg.det(U @ Vt))])
+    return U @ D @ Vt
+
+
+def relative_rotation_errors(R_ref: list[np.ndarray], R_est: list[np.ndarray]) -> np.ndarray:
+    """Alignment-free: angle between reference and estimated relative rotations, all camera pairs."""
+    errs = []
+    for i in range(len(R_ref)):
+        for j in range(i + 1, len(R_ref)):
+            rel_ref = R_ref[i] @ R_ref[j].T
+            rel_est = R_est[i] @ R_est[j].T
+            errs.append(rotation_angle_deg(rel_ref @ rel_est.T))
+    return np.array(errs)
+
+
 def pose_errors(ref: Model, est: Model, metres_per_unit: float,
                 pos_tol_m: float = 0.10, rot_tol_deg: float = 2.0) -> dict:
     """Align est to ref on shared images and report pose accuracy.
@@ -133,11 +152,20 @@ def pose_errors(ref: Model, est: Model, metres_per_unit: float,
     s, R, t = umeyama(C_est, C_ref)
     C_al = (s * (R @ C_est.T)).T + t
     pos_err = np.linalg.norm(C_al - C_ref, axis=1) * metres_per_unit
-    rot_err = np.array([rotation_angle_deg(ref.images[n].R @ (est.images[n].R @ R.T).T) for n in names])
+    # Rotation error after the best rotation-only alignment, so a slightly mis-estimated
+    # centre-based alignment (e.g. roll about a near-collinear camera path) is not
+    # counted against every camera.
+    R_ref = [ref.images[n].R for n in names]
+    R_est = [est.images[n].R for n in names]
+    A = align_rotations(R_ref, R_est)
+    rot_err = np.array([rotation_angle_deg(Rr @ (Re @ A.T).T) for Rr, Re in zip(R_ref, R_est)])
+    rel_err = relative_rotation_errors(R_ref, R_est)
     out.update({
         "ate_rmse_m": float(np.sqrt((pos_err ** 2).mean())),
         "ate_median_m": float(np.median(pos_err)),
         "rot_err_median_deg": float(np.median(rot_err)),
+        "rel_rot_err_median_deg": float(np.median(rel_err)),
+        "pos_err_max_m": float(pos_err.max()),
         "num_accurate": int(((pos_err < pos_tol_m) & (rot_err < rot_tol_deg)).sum()),
         "per_image": {n: [float(p), float(r)] for n, p, r in zip(names, pos_err, rot_err)},
     })

@@ -91,6 +91,7 @@ class Water:
     forward_scatter_frac: float = 0.5        # eta: share of scattering kept near-forward
     forward_blur_deg: float = 0.5            # angular width (sigma) of the forward-scatter halo
     mu_d: float = 0.85                       # mean cosine of downwelling light (for Kd)
+    veil_scale: float = 1.0                  # multiplier on the single-scattering veiling estimate
 
     def __post_init__(self):
         if self.water_type not in WATER_TYPES:
@@ -135,7 +136,7 @@ def channel_curves(water: Water, r_max: float = 200.0, n: int = 1024) -> Channel
     att = np.exp(-np.outer(r, c))                                 # N x L
     T = (sens * E) @ att.T / norm[:, None]
     F = (sens * E) @ (att * (np.exp(np.outer(r, water.forward_scatter_frac * b)) - 1.0)).T / norm[:, None]
-    B = (sens * (E * bb / (2.0 * c))) @ (1.0 - att).T / norm[:, None]
+    B = water.veil_scale * (sens * (E * bb / (2.0 * c))) @ (1.0 - att).T / norm[:, None]
     return ChannelCurves(r=r, T=T, F=F, B=B)
 
 

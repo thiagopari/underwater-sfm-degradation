@@ -133,3 +133,13 @@ def test_oracle_inverts_noise_free_render():
     img, g = expose(lin, Sensor(), None)
     back = srgb_to_linear(sea_thru_oracle(img, rng_m, w, g, cur) / 255.0)
     assert np.abs(back - rho).mean() < 0.03
+
+
+def test_rotation_alignment_recovers_world_rotation():
+    rng = np.random.default_rng(4)
+    A = qvec_to_R(np.array([0.8, 0.3, 0.4, -0.2]))
+    R_ref = [qvec_to_R(rng.normal(size=4)) for _ in range(10)]
+    R_est = [R @ A for R in R_ref]  # R_est_i A^T = R_ref_i
+    from src.geometry import align_rotations, relative_rotation_errors
+    assert np.allclose(align_rotations(R_ref, R_est), A, atol=1e-8)
+    assert relative_rotation_errors(R_ref, R_est).max() < 1e-5
